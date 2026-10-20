@@ -20,7 +20,7 @@ chunks = []
 for i in range(0, len(full_text), chunk_size):
     chunks.append(full_text[i:i + chunk_size])
 
-# 4. Load the embedding model
+# 4. Load the embedding modelgit
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
 # 5. Convert document chunks into embeddings
