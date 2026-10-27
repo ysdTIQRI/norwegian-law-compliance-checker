@@ -1,6 +1,23 @@
+# Virtual environment
 .venv/
-venv/
+
+# Python cache
 __pycache__/
-*.py[cod]
+*.pyc
+
+# Secret keys and credentials
+secrets/
+secret.key
 .env
-*.exe
+
+# Potentially sensitive test data
+data/pii_data.csv
+data/masked_pii_data.csv
+data/encrypted_pii_data.csv
+
+# Python installer files
+python-*.exe
+
+# IDE and editor files
+.vscode/
+.idea/

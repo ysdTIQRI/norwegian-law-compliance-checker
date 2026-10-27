@@ -2,7 +2,7 @@
 import pymupdf
 
 # Open the PDF
-pdf = pymupdf.open("sample.pdf")
+pdf = pymupdf.open("data/sample.pdf")
 
 # Extract text from all pages
 full_text = ""

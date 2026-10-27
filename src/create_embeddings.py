@@ -3,7 +3,7 @@ import pymupdf
 from sentence_transformers import SentenceTransformer
 
 # Open the PDF
-pdf = pymupdf.open("sample.pdf")
+pdf = pymupdf.open("data/sample.pdf")
 
 # Extract all text
 full_text = ""
