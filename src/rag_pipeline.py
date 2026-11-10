@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import time
 import requests
 from sentence_transformers import SentenceTransformer, util
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -749,11 +750,22 @@ def run_analysis(document_path, question):
 
     print("\n========== CONTRACT RETRIEVAL ==========\n")
 
+    contract_start_time = time.perf_counter()
+
     contract_results = retrieve_contract_chunks(
         question,
         contract_chunks,
         embedding_model,
         TOP_K_CONTRACT
+    )
+
+    contract_retrieval_time = (
+        time.perf_counter() - contract_start_time
+    ) * 1000
+
+    print(
+        f"Contract retrieval time: "
+        f"{contract_retrieval_time:.2f} ms"
     )
 
     print("Retrieved contract chunks:", len(contract_results))
@@ -762,10 +774,21 @@ def run_analysis(document_path, question):
 
     print("\n========== LEGAL RETRIEVAL ==========\n")
 
+    legal_start_time = time.perf_counter()
+
     legal_results = retrieve_legal_chunks(
         question,
         embedding_model,
         TOP_K_LEGAL
+    )
+
+    legal_retrieval_time = (
+        time.perf_counter() - legal_start_time
+    ) * 1000
+
+    print(
+        f"Legal retrieval time: "
+        f"{legal_retrieval_time:.2f} ms"
     )
 
     print("Retrieved legal sections:", len(legal_results))
@@ -794,10 +817,22 @@ def run_analysis(document_path, question):
         "document_location_count": len(pages),
         "document_type": document_extension.lstrip("."),
         "chunk_count": len(contract_chunks),
+
         "pii_detected": security_result["pii_detected"],
         "masking_completed": security_result["masking_completed"],
+
         "contract_results": contract_results,
-        "legal_results": legal_results
+        "legal_results": legal_results,
+
+        # Retrieval performance
+        "contract_retrieval_time": contract_retrieval_time,
+        "legal_retrieval_time": legal_retrieval_time,
+        "total_retrieval_time": (
+            contract_retrieval_time + legal_retrieval_time
+        ),
+
+        # Verified masked document content
+        "masked_document_text": masked_contract_text
     }
 
 

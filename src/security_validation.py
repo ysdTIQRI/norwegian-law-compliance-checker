@@ -8,26 +8,52 @@ from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
 
+try:
+    from .norwegian_pii_recognizers import (
+        NorwegianFodselsnummerRecognizer
+    )
+except ImportError:
+    from norwegian_pii_recognizers import (
+        NorwegianFodselsnummerRecognizer
+    )
+
+
+# ==========================================
+# 1. CONFIGURATION
+# ==========================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 OPA_PATH = BASE_DIR / "opa.exe"
 POLICY_PATH = BASE_DIR / "policies" / "pii_policy.rego"
 
+PII_ENTITIES = [
+    "PERSON",
+    "EMAIL_ADDRESS",
+    "PHONE_NUMBER",
+    "NORWEGIAN_FODSELSNUMMER"
+]
+
 analyzer = AnalyzerEngine()
 anonymizer = AnonymizerEngine()
 
+# Register Norwegian fødselsnummer recognizer
+analyzer.registry.add_recognizer(
+    NorwegianFodselsnummerRecognizer()
+)
 
-# --------------------------------------------------
-# DOCUMENT SECURITY VALIDATION
-# --------------------------------------------------
+# ==========================================
+# 2. DOCUMENT SECURITY VALIDATION
+# ==========================================
 
 def validate_document(text):
     """
     Detect and mask PII in extracted document text.
-    Then ask OPA whether further processing is allowed.
 
-    Supports text extracted from:
+    Verify that all targeted PII is removed before
+    allowing the document to proceed through OPA.
+
+    Supports:
     - PDF
     - CSV
     - Excel
@@ -46,20 +72,16 @@ def validate_document(text):
             f"OPA policy not found: {POLICY_PATH}"
         )
 
-    # --------------------------------------------------
+    # ------------------------------------------
     # STEP 1: DETECT PII
-    # --------------------------------------------------
+    # ------------------------------------------
 
     print("\n========== PII VALIDATION ==========\n")
 
     results = analyzer.analyze(
         text=text,
         language="en",
-        entities=[
-            "PERSON",
-            "EMAIL_ADDRESS",
-            "PHONE_NUMBER"
-        ]
+        entities=PII_ENTITIES
     )
 
     pii_detected = len(results) > 0
@@ -80,9 +102,9 @@ def validate_document(text):
 
         print("No PII detected.")
 
-    # --------------------------------------------------
-    # STEP 2: MASK PII
-    # --------------------------------------------------
+    # ------------------------------------------
+    # STEP 2: MASK DETECTED PII
+    # ------------------------------------------
 
     operators = {
         "PERSON": OperatorConfig(
@@ -98,7 +120,12 @@ def validate_document(text):
         "PHONE_NUMBER": OperatorConfig(
             "replace",
             {"new_value": "<PHONE_NUMBER>"}
-        )
+        ),
+
+       "NORWEGIAN_FODSELSNUMMER": OperatorConfig(
+            "replace",
+            {"new_value": "[REDACTED]"}
+)
     }
 
     anonymized_result = anonymizer.anonymize(
@@ -109,13 +136,60 @@ def validate_document(text):
 
     masked_text = anonymized_result.text
 
-    masking_completed = (
-        not pii_detected or masked_text != text
-    )
+    # ------------------------------------------
+    # STEP 3: VERIFY MASKING
+    # ------------------------------------------
 
-    # --------------------------------------------------
-    # STEP 3: PREPARE OPA INPUT
-    # --------------------------------------------------
+    print("\n========== PII MASKING VERIFICATION ==========\n")
+
+    if not pii_detected:
+
+        masking_completed = True
+
+        print("No PII detected. Masking not required.")
+
+    else:
+
+        # Analyse the masked document again.
+        # Check whether any targeted PII remains.
+
+        remaining_results = analyzer.analyze(
+            text=masked_text,
+            language="en",
+            entities=PII_ENTITIES
+        )
+
+        masking_completed = len(remaining_results) == 0
+
+        if masking_completed:
+
+            print("PII masking verification successful.")
+            print("No targeted PII remains detectable.")
+
+        else:
+
+            print("PII masking verification FAILED.")
+
+            print(
+                "Remaining detected PII entities:",
+                len(remaining_results)
+            )
+
+            for result in remaining_results:
+
+                print(
+                    f"Remaining type: {result.entity_type} | "
+                    f"Confidence: {result.score:.2f} | "
+                    "Value: [REDACTED]"
+                )
+
+            print(
+                "Document will be blocked by OPA."
+            )
+
+    # ------------------------------------------
+    # STEP 4: PREPARE OPA INPUT
+    # ------------------------------------------
 
     policy_input = {
         "pii_detected": pii_detected,
@@ -137,9 +211,9 @@ def validate_document(text):
 
             temp_file_path = temp_file.name
 
-        # --------------------------------------------------
-        # STEP 4: ASK OPA FOR SECURITY DECISION
-        # --------------------------------------------------
+        # ------------------------------------------
+        # STEP 5: ASK OPA FOR SECURITY DECISION
+        # ------------------------------------------
 
         command = [
             str(OPA_PATH),
@@ -161,8 +235,6 @@ def validate_document(text):
         )
 
         opa_result = json.loads(response.stdout)
-
-        # Validate OPA response
 
         result_items = opa_result.get("result", [])
 
@@ -214,21 +286,18 @@ def validate_document(text):
         if temp_file_path:
             Path(temp_file_path).unlink(missing_ok=True)
 
-    # --------------------------------------------------
-    # STEP 5: DISPLAY SECURITY DECISION
-    # --------------------------------------------------
+    # ------------------------------------------
+    # STEP 6: DISPLAY OPA SECURITY DECISION
+    # ------------------------------------------
 
     print("\n========== OPA SECURITY DECISION ==========\n")
 
     print("Allow:", decision["allow"])
     print("Message:", decision["message"])
 
-    if pii_detected:
-        print("\nPII masking completed.")
-
-    # --------------------------------------------------
-    # STEP 6: RETURN RESULTS
-    # --------------------------------------------------
+    # ------------------------------------------
+    # STEP 7: RETURN SECURITY RESULTS
+    # ------------------------------------------
 
     return {
         "pii_detected": pii_detected,
@@ -238,9 +307,9 @@ def validate_document(text):
     }
 
 
-# --------------------------------------------------
-# TEST SECURITY VALIDATION
-# --------------------------------------------------
+# ==========================================
+# 3. TEST SECURITY VALIDATION
+# ==========================================
 
 if __name__ == "__main__":
 
@@ -268,4 +337,6 @@ if __name__ == "__main__":
 
     else:
 
-        print("\nBLOCKED: Document cannot be processed.")
+        print(
+            "\nBLOCKED: Document cannot be processed."
+        )

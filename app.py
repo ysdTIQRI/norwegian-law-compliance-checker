@@ -286,6 +286,70 @@ if analyse_button:
                 st.divider()
 
                 # --------------------------------------------------
+                # RETRIEVAL PERFORMANCE
+                # --------------------------------------------------
+
+                st.markdown(
+                    '<div class="section-title">4. Retrieval Performance</div>',
+                    unsafe_allow_html=True
+                )
+
+                col1, col2, col3 = st.columns(3)
+
+                col1.metric(
+                    "Contract Retrieval",
+                    f"{result['contract_retrieval_time']:.2f} ms"
+                )
+
+                col2.metric(
+                    "Legal Retrieval",
+                    f"{result['legal_retrieval_time']:.2f} ms"
+                )
+
+                col3.metric(
+                    "Total Retrieval Time",
+                    f"{result['total_retrieval_time']:.2f} ms"
+                )
+
+                st.divider()
+
+                st.divider()
+
+                # --------------------------------------------------
+                # MASKED DOCUMENT DOWNLOAD
+                # --------------------------------------------------
+
+                st.markdown(
+                    '<div class="section-title">5. Protected Document</div>',
+                    unsafe_allow_html=True
+                )
+
+                if result["masking_completed"]:
+
+                    masked_filename = (
+                        f"{Path(uploaded_file.name).stem}_masked.txt"
+                    )
+
+                    st.success(
+                        "A masked version of the uploaded document is ready."
+                    )
+                    
+                    st.download_button(
+                        label="Download Masked Document",
+                        data=result["masked_document_text"],
+                        file_name=masked_filename,
+                        mime="text/plain",
+                        use_container_width=True,
+                        on_click="ignore"
+                    )
+
+                else:
+
+                    st.info(
+                        "No PII was detected. No masked replacement document is required."
+                    )
+
+                # --------------------------------------------------
                 # AI ANALYSIS
                 # --------------------------------------------------
 
