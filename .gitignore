@@ -1,23 +1,69 @@
-# Virtual environment
+
+# ==========================================
+# Python
+# ==========================================
+
 .venv/
-
-# Python cache
 __pycache__/
-*.pyc
+**/__pycache__/
+*.py[cod]
+*.pyo
 
-# Secret keys and credentials
-secrets/
-secret.key
+# ==========================================
+# Environment variables and secrets
+# ==========================================
+
 .env
+.env.*
+!.env.example
 
-# Potentially sensitive test data
-data/pii_data.csv
-data/masked_pii_data.csv
-data/encrypted_pii_data.csv
+secrets/
+*.key
+*.pem
 
-# Python installer files
-python-*.exe
+# ==========================================
+# Databases and vector storage
+# ==========================================
 
+chroma_db/
+*.db
+*.sqlite
+*.sqlite3
+
+# ==========================================
+# Sensitive documents and test data
+# ==========================================
+
+data/*.pdf
+data/*.csv
+data/**/*.pdf
+data/**/*.csv
+data/**/*.xlsx
+data/**/*.xls
+
+# ==========================================
+# Executables
+# ==========================================
+
+*.exe
+
+# ==========================================
+# Temporary files
+# ==========================================
+
+*.tmp
+*.log
+
+# ==========================================
 # IDE and editor files
+# ==========================================
+
 .vscode/
 .idea/
+
+# ==========================================
+# Operating system
+# ==========================================
+
+.DS_Store
+Thumbs.db

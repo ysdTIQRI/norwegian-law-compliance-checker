@@ -1,258 +1,91 @@
-from pathlib import Path
-import re
 
-from sentence_transformers import SentenceTransformer, util
+from sentence_transformers import SentenceTransformer
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+try:
+    from .vector_database import search_legal_documents
+except ImportError:
+    from vector_database import search_legal_documents
 
-LEGAL_FILE = (
-    BASE_DIR
-    / "legal_data"
-    / "working_environment_act.txt"
-)
+
+# ==========================================
+# 1. CONFIGURATION
+# ==========================================
 
 MODEL_NAME = "all-MiniLM-L6-v2"
-DEFAULT_TOP_K = 3
+DEFAULT_TOP_K = 5
 
-def load_legal_text():
-    """Read the Norwegian legal text file."""
+_model = None
 
-    if not LEGAL_FILE.exists():
-        raise FileNotFoundError(
-            f"Legal file not found: {LEGAL_FILE}"
-        )
 
-    text = LEGAL_FILE.read_text(encoding="utf-8")
+# ==========================================
+# 2. LOAD EMBEDDING MODEL
+# ==========================================
 
-    if not text.strip():
-        raise ValueError("The legal text file is empty.")
+def get_embedding_model():
 
-    return text
+    global _model
 
-def create_legal_chunks(text):
-    """
-    Split legal text into smaller chunks.
+    if _model is None:
 
-    Each chunk keeps its legal reference, such as:
-    14-5(1)
-    14-6(1)(g)
-    14-6(1)(h)
-    """
+        print("Loading embedding model...")
 
-    heading_pattern = re.compile(
-        r"(?mi)^\s*(?:section\s+)?(\d+-\d+)\s*[-–—]\s*(.+?)\s*$"
-    )
+        _model = SentenceTransformer(MODEL_NAME)
 
-    headings = list(heading_pattern.finditer(text))
+    return _model
 
-    if not headings:
-        raise ValueError(
-            "No legal section headings were found. "
-            "Check the heading format in working_environment_act.txt."
-        )
 
-    chunks = []
-
-    for index, heading in enumerate(headings):
-
-        section_number = heading.group(1)
-
-        start = heading.end()
-
-        if index + 1 < len(headings):
-            end = headings[index + 1].start()
-        else:
-            end = len(text)
-
-        section_text = text[start:end].strip()
-
-        lines = section_text.splitlines()
-
-        current_reference = None
-        current_lines = []
-
-        def save_chunk():
-
-            if current_reference and current_lines:
-
-                chunk_text = "\n".join(current_lines).strip()
-
-                if chunk_text:
-                    chunks.append({
-                        "section": section_number,
-                        "reference": current_reference,
-                        "text": chunk_text
-                    })
-
-        for line in lines:
-
-            line = line.strip()
-
-            if not line:
-                continue
-
-            # Identify numbered subsections: (1), (2), (3)
-            number_match = re.match(
-                r"^\((\d+)\)\s*(.*)",
-                line
-            )
-
-            # Identify lettered clauses: (a), (b), (c)
-            letter_match = re.match(
-                r"^\(([a-q])\)\s*(.*)",
-                line,
-                re.IGNORECASE
-            )
-
-            # Handle numbered subsections
-            if number_match:
-
-                save_chunk()
-
-                subsection_number = number_match.group(1)
-
-                current_reference = (
-                    f"{section_number}({subsection_number})"
-                )
-
-                current_lines = []
-
-                remaining_text = number_match.group(2).strip()
-
-                if remaining_text:
-                    current_lines.append(remaining_text)
-
-            # Handle lettered clauses inside Section 14-6(1)
-            elif (
-                section_number == "14-6"
-                and current_reference is not None
-                and current_reference.startswith("14-6(1)")
-                and letter_match
-            ):
-
-                save_chunk()
-
-                clause_letter = letter_match.group(1).lower()
-
-                current_reference = (
-                    f"14-6(1)({clause_letter})"
-                )
-
-                current_lines = []
-
-                remaining_text = letter_match.group(2).strip()
-
-                if remaining_text:
-                    current_lines.append(remaining_text)
-
-            else:
-
-                if current_reference:
-                    current_lines.append(line)
-
-        # Save the last chunk in the section
-        save_chunk()
-
-    return chunks
-
-# --------------------------------------------------
-# Step 3: Search for relevant legal provisions
-# --------------------------------------------------
+# ==========================================
+# 3. SEARCH LEGAL INFORMATION
+# ==========================================
 
 def search_legal_information(question, top_k=DEFAULT_TOP_K):
-    """Find the most relevant legal chunks."""
 
-    if not question.strip():
-        raise ValueError("The question cannot be empty.")
+    if not question or not question.strip():
+        raise ValueError("Question cannot be empty.")
 
     if top_k < 1:
         raise ValueError("top_k must be at least 1.")
 
-    # Load and split legal text
-    legal_text = load_legal_text()
+    print("\n========== POSTGRESQL LEGAL SEARCH ==========\n")
 
-    legal_chunks = create_legal_chunks(legal_text)
+    # Generate question embedding
+    model = get_embedding_model()
 
-    if not legal_chunks:
-        print("No legal sections were found.")
-        return []
-
-    print("Legal text loaded successfully.")
-    print("Number of legal chunks:", len(legal_chunks))
-
-    # Load embedding model
-    print("\nLoading the embedding model...")
-
-    model = SentenceTransformer(MODEL_NAME)
-
-    # Create embeddings for legal chunks
-    legal_texts = [
-        chunk["text"]
-        for chunk in legal_chunks
-    ]
-
-    legal_embeddings = model.encode(
-        legal_texts,
-        convert_to_tensor=True
-    )
-
-    print("Legal embeddings created successfully.")
-
-    # Create question embedding
     question_embedding = model.encode(
         question,
-        convert_to_tensor=True
+        convert_to_numpy=True
     )
 
-    # Calculate semantic similarity
-    similarities = util.cos_sim(
+    # Search PostgreSQL using pgvector
+    legal_results = search_legal_documents(
         question_embedding,
-        legal_embeddings
-    )[0]
-
-    # Select the top results
-    number_to_return = min(
-        top_k,
-        len(legal_chunks)
+        top_k
     )
 
-    top_indices = similarities.argsort(
-        descending=True
-    )[:number_to_return]
+    if not legal_results:
+        print("No legal documents found in PostgreSQL.")
+        return []
 
-    # Display results
-    results = []
+    print("Retrieved legal documents:", len(legal_results))
 
-    print("\n========== LEGAL SEARCH RESULTS ==========\n")
+    for rank, result in enumerate(legal_results, start=1):
 
-    for rank, index in enumerate(top_indices, start=1):
-        position = index.item()
+        print(f"\nResult {rank}")
 
-        chunk = legal_chunks[position]
-        score = similarities[position].item()
+        print("Legal reference:", result["reference"])
 
-        result = {
-            "section": chunk["section"],
-            "reference": chunk["reference"],
-            "text": chunk["text"],
-            "score": score
-        }
+        print(f"Similarity score: {result['score']:.3f}")
 
-        results.append(result)
+        print("Legal text:", result["text"])
 
-        print(f"Result {rank}")
-        print(f"Legal section: {result['section']}")
-        print(f"Legal reference: {result['reference']}")
-        print(f"Similarity score: {score:.3f}")
-        print(result["text"])
         print("-" * 60)
 
-    return results
+    return legal_results
 
 
-# --------------------------------------------------
-# Step 4: Run the search
-# --------------------------------------------------
+# ==========================================
+# 4. MAIN EXECUTION
+# ==========================================
 
 if __name__ == "__main__":
 
@@ -261,9 +94,6 @@ if __name__ == "__main__":
     ).strip()
 
     if question:
-        search_legal_information(
-            question,
-            top_k=5
-        )
+        search_legal_information(question)
     else:
         print("Please enter a question.")
